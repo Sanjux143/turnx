@@ -66,7 +66,7 @@ prepare_workdir(){
 		echo -e "$red Failed to apply patch! $nocolor"
 		exit 1
 	}
-
+}
 
 build_lib_for_android(){
 	#Workaround for using Clang as c compiler instead of GCC
