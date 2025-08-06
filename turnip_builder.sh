@@ -61,8 +61,8 @@ prepare_workdir(){
 		cd mesa-main
 		
 	# ⛏ Apply patch for Adreno 710/720 GPUs
-	echo "Applying fd710" $'\n'
-	patch -p1 < "$GITHUB_WORKSPACE/patches/fd710.patch" || {
+	echo "Applying Adrenoxxx" $'\n'
+	patch -p1 < "$GITHUB_WORKSPACE/patches/unsup_gpus_auto.patch" || {
 		echo -e "$red Failed to apply patch! $nocolor"
 		exit 1
 	}
@@ -209,7 +209,7 @@ port_lib_for_adrenotools(){
 	"schemaVersion": 1,
 	"name": "Turnip v25.3.0",
 	"description": "$(date)",
-	"author": "Sanju, Chaudhari",
+	"author": "Sanju",
 	"packageVersion": "1",
 	"vendor": "Mesa",
 	"driverVersion": "$(cat $workdir/mesa-main/VERSION)",
