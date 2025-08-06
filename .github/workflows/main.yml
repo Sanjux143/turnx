@@ -13,13 +13,15 @@ jobs:
 
       - name: Prepare environment
         run: |
-          sudo sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/ubuntu.sources || true
           sudo apt update
-          sudo apt build-dep mesa -y || true
-          sudo apt install meson -y
+          sudo apt install python3-pip ninja-build curl unzip patchelf flex bison zip -y
+          pip install --upgrade meson mako
+          meson --version
 
       - name: Execute build script
-        run: bash ./turnip_builder.sh
+        run: |
+          chmod +x ./turnip_builder.sh
+          bash ./turnip_builder.sh
 
       - name: Upload logs even if build fails
         if: always()
