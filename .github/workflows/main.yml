@@ -8,40 +8,30 @@ on:
 jobs:
   start_building_turnip:
     runs-on: ubuntu-24.04
-
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v3
 
-      - name: Enable deb-src and install dependencies
+      - name: Prepare environment
         run: |
-          echo "Adding deb-src to sources.list"
-          sudo bash -c 'echo "deb-src http://archive.ubuntu.com/ubuntu noble main restricted universe multiverse" >> /etc/apt/sources.list'
-          sudo bash -c 'echo "deb-src http://archive.ubuntu.com/ubuntu noble-updates main restricted universe multiverse" >> /etc/apt/sources.list'
-          sudo bash -c 'echo "deb-src http://archive.ubuntu.com/ubuntu noble-security main restricted universe multiverse" >> /etc/apt/sources.list'
-
-          echo "Updating APT and installing dependencies"
+          sudo sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/ubuntu.sources || true
           sudo apt update
-          sudo apt build-dep mesa -y
-
-          echo "Installing required tools"
-          sudo apt install -y \
-            meson ninja-build patchelf unzip curl python3-pip flex bison zip \
-            glslang-tools libdrm-dev libexpat1-dev zlib1g-dev libx11-dev \
-            libxcb1-dev libelf-dev libunwind-dev python3-mako
+          sudo apt build-dep mesa -y || true
+          sudo apt install meson -y
 
       - name: Execute build script
         run: bash ./turnip_builder.sh
 
-      - name: Upload a Build Artifact
+      - name: Upload logs even if build fails
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Upload meson and ninja logs for debugging
+          name: meson-ninja-logs
           path: |
             turnip_workdir/ninja_log
             turnip_workdir/mesa-main/build-android-aarch64/meson-logs/meson-log.txt
 
       - name: Release "turnip"
+        if: success()
         uses: softprops/action-gh-release@v1
         with:
           body: Turnip magisk module and driver package for adrenotools
