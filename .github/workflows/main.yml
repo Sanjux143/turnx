@@ -1,0 +1,62 @@
+name: Build "turnip"
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "20 5 1,15 * *"
+
+jobs:
+  start_building_turnip:
+    runs-on: ubuntu-24.04
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Setup APT and install dependencies
+      run: |
+        # Enable source repos for build-dep
+        sudo apt-add-repository "deb-src http://archive.ubuntu.com/ubuntu $(lsb_release -sc) main restricted universe multiverse"
+        sudo apt update
+
+        # Mesa build dependencies and tools
+        sudo apt build-dep mesa -y
+        sudo apt install -y \
+          python3-pip \
+          ninja-build \
+          build-essential \
+          curl \
+          unzip \
+          git \
+          flex \
+          bison \
+          zip \
+          patchelf \
+          glslang-tools
+
+        # Install Meson via pip (more updated than APT)
+        pip install meson==1.8.0
+
+    - name: Set script as executable
+      run: chmod +x ./turnip_builder.sh
+
+    - name: Execute turnip builder script
+      run: bash ./turnip_builder.sh
+
+    - name: Upload build logs for debugging
+      uses: actions/upload-artifact@v4
+      with:
+        name: meson-and-ninja-logs
+        path: |
+          turnip_workdir/ninja_log
+          turnip_workdir/mesa-main/build-android-aarch64/meson-logs/meson-log.txt
+
+    - name: Release "turnip" build
+      uses: softprops/action-gh-release@v1
+      with:
+        name: Turnip Automated Release
+        tag_name: "turnip-$(date +'%Y%m%d')"
+        body: "Turnip magisk module and driver package for adrenotools"
+        files: |
+          turnip_workdir/turnip.zip
+          turnip_workdir/turnip_adrenotools.zip
