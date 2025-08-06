@@ -11,13 +11,17 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Prepare environment
+      - name: Install required packages
         run: |
           sudo apt update
           sudo apt install python3-pip ninja-build curl unzip patchelf flex bison zip -y
           pip install --upgrade meson mako
-          meson --version
 
+          # 🔧 Install glslang binaries
+          wget https://github.com/KhronosGroup/glslang/releases/download/11.13.0/glslang-master-linux-Release.zip
+          unzip glslang-master-linux-Release.zip -d glslang-bin
+          sudo mv glslang-bin/bin/* /usr/local/bin/
+          
       - name: Execute build script
         run: |
           chmod +x ./turnip_builder.sh
