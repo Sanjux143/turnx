@@ -72,17 +72,17 @@ index 03ab1b675f5..c17c8549cf2 100644
        .gmem_size = 1024 * 1024 + 512 * 1024,
     },
 +   {
-+      .gpu_id = 710
++      .gpu_id = 710,
 +      .chip_id = 0x07010000,
 +      .gmem_size = 2 * 1024 * 1024,
 +   },
 +   {
-+      .gpu_id = 720
++      .gpu_id = 720,
 +      .chip_id = 0x43020000,
 +      .gmem_size = 2 * 1024 * 1024,
 +   },
 +   {
-+      .gpu_id = 725
++      .gpu_id = 725,
 +      .chip_id = 0x07020000,
 +      .gmem_size = 2 * 1024 * 1024,
 +   },
