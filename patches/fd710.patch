@@ -23,7 +23,6 @@ index 2a821dd822b..527d5fc9e4a 100644
 +        magic_regs = a730_magic_regs,
 +        raw_magic_regs = a730_raw_magic_regs,
 +    ))
-
  add_gpus([
          GPUId(chip_id=0x07030001, name="FD730"), # KGSL, no speedbin data
          GPUId(chip_id=0xffff07030001, name="FD730"), # Default no-speedbin fallback
