@@ -207,9 +207,9 @@ port_lib_for_adrenotools(){
 		cat <<EOF > "meta.json"
 {
 	"schemaVersion": 1,
-	"name": "freedreno_turnip-CI",
+	"name": "Turnip v25.3.0",
 	"description": "$(date)",
-	"author": "MrMiy4mo, kethen",
+	"author": "Sanju, Chaudhari",
 	"packageVersion": "1",
 	"vendor": "Mesa",
 	"driverVersion": "$(cat $workdir/mesa-main/VERSION)",
