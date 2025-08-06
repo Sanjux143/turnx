@@ -3,66 +3,71 @@ name: Build "turnip"
 on:
   workflow_dispatch:
   schedule:
-    - cron: "20 5 1,15 * *" # Run on 1st and 15th of every month
+    - cron: "20 5 1,15 * *"
 
 jobs:
   start_building_turnip:
     runs-on: ubuntu-24.04
 
     steps:
-    - name: Checkout repo
-      uses: actions/checkout@v3
+      - name: Checkout repository
+        uses: actions/checkout@v3
 
-    - name: Install system dependencies
-      run: |
-        sudo sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/ubuntu.sources || true
-        sudo apt update
-        sudo apt install -y \
-          build-essential curl unzip zip \
-          python3-pip ninja-build patchelf flex bison \
-          libzstd-dev libexpat1-dev libdrm-dev \
-          llvm-15 llvm-15-dev clang-15 cmake \
-          zlib1g-dev libelf-dev pkg-config \
-          libudev-dev libglvnd-dev
+      - name: Prepare environment
+        run: |
+          sudo sed -i 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/ubuntu.sources || true
+          sudo apt update
+          sudo apt install -y software-properties-common
+          sudo apt build-dep mesa -y || true
+          sudo apt install -y \
+            meson \
+            ninja-build \
+            unzip \
+            curl \
+            zip \
+            bison \
+            flex \
+            glslang-tools \
+            python3-pip \
+            cmake \
+            git
+          pip install mako
 
-        # Use meson via pip for correct version
-        sudo pip install meson==1.8.3 mako
+      - name: Install glslang (if glslang binary missing)
+        run: |
+          # Check if glslang exists
+          if ! command -v glslang >/dev/null; then
+            echo "glslang not found, linking glslangValidator as fallback..."
+            if command -v glslangValidator >/dev/null; then
+              sudo ln -s $(which glslangValidator) /usr/local/bin/glslang
+            else
+              echo "glslangValidator also missing!"
+              exit 1
+            fi
+          fi
+          # Verify install
+          glslang --version || echo "glslang not responding"
+          glslangValidator --version || true
 
-    - name: Install glslangValidator (prebuilt)
-      run: |
-        wget https://github.com/KhronosGroup/glslang/releases/download/master-tot/glslang-master-linux-Release.zip
-        unzip glslang-master-linux-Release.zip -d glslang-bin
-        sudo mv glslang-bin/bin/* /usr/local/bin/
-        glslangValidator --version || echo "glslangValidator not found"
+      - name: Execute build script
+        run: bash ./turnip_builder.sh
 
-    - name: Execute build script
-      run: bash ./turnip_builder.sh
+      - name: Upload logs even if build fails
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: meson-ninja-logs
+          path: |
+            turnip_workdir/ninja_log
+            turnip_workdir/mesa-main/build-android-aarch64/meson-logs/meson-log.txt
 
-    - name: Upload logs (always)
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: meson-ninja-logs
-        path: |
-          turnip_workdir/ninja_log
-          turnip_workdir/mesa-main/build-android-aarch64/meson-logs/meson-log.txt
-
-    - name: Upload Build Output (if successful)
-      if: success()
-      uses: actions/upload-artifact@v4
-      with:
-        name: turnip-output
-        path: |
-          turnip_workdir/turnip.zip
-          turnip_workdir/turnip_adrenotools.zip
-
-    - name: Release "turnip"
-      if: success()
-      uses: softprops/action-gh-release@v1
-      with:
-        body: Turnip magisk module and driver package for adrenotools
-        tag_name: github_run
-        name: Weekly Action Release
-        files: |
-          turnip_workdir/turnip.zip
-          turnip_workdir/turnip_adrenotools.zip
+      - name: Release "turnip"
+        if: success()
+        uses: softprops/action-gh-release@v1
+        with:
+          body: Turnip magisk module and driver package for adrenotools
+          tag_name: github_run
+          name: Weekly Action Release
+          files: |
+            turnip_workdir/turnip.zip
+            turnip_workdir/turnip_adrenotools.zip
