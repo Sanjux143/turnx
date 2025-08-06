@@ -62,7 +62,7 @@ prepare_workdir(){
 		
 	# ⛏ Apply patch for Adreno 710/720 GPUs
 	echo "Applying Adreno 7xx patch..." $'\n'
-	patch -p1 < ../patches/adreno-7xx.patch || {
+	patch -p1 < ../patches/adreno-725.patch || {
 		echo -e "$red Failed to apply patch! $nocolor"
 		exit 1
 	}
