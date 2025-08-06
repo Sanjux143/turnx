@@ -16,7 +16,7 @@ index 2a821dd822b..527d5fc9e4a 100644
 +        tile_align_w = 64,
 +        tile_align_h = 32,
 +        num_vsc_pipes = 32,
-+        cs_shared_mem_size = 32 * 1024,
++        cs_shared_mem_size = 64 * 1024,
 +        wave_granularity = 2,
 +        fibers_per_sp = 128 * 2 * 16,
 +        highest_bank_bit = 16,
@@ -34,7 +34,7 @@ index 2a821dd822b..527d5fc9e4a 100644
 +        tile_align_w = 64,
 +        tile_align_h = 32,
 +        num_vsc_pipes = 32,
-+        cs_shared_mem_size = 32 * 1024,
++        cs_shared_mem_size = 64 * 1024,
 +        wave_granularity = 2,
 +        fibers_per_sp = 128 * 2 * 16,
 +        highest_bank_bit = 16,
@@ -56,12 +56,12 @@ index 03ab1b675f5..c17c8549cf2 100644
 +   {
 +      .gpu_id = 710
 +      .chip_id = 0x07010000,
-+      .gmem_size = 4 * 1024 * 1024,
++      .gmem_size = 1 * 1024 * 1024,
 +   },
 +   {
 +      .gpu_id = 720
 +      .chip_id = 0x43020000,
-+      .gmem_size = 4 * 1024 * 1024,
++      .gmem_size = 1 * 1024 * 1024,
 +   },
     {
        .gpu_id = 730,
