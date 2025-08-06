@@ -59,7 +59,13 @@ prepare_workdir(){
 	echo "Exracting mesa source ..." $'\n'
 		unzip mesa-main.zip &> /dev/null
 		cd mesa-main
-}
+		
+	# ⛏ Apply patch for Adreno 710/720 GPUs
+	echo "Applying Adreno 7xx patch..." $'\n'
+	patch -p1 < ../patches/adreno-7xx.patch || {
+		echo -e "$red Failed to apply patch! $nocolor"
+		exit 1
+	}
 
 
 build_lib_for_android(){
