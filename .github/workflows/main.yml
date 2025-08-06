@@ -20,7 +20,6 @@ jobs:
           sudo apt install -y software-properties-common
           sudo apt build-dep mesa -y || true
           sudo apt install -y \
-            meson \
             ninja-build \
             unzip \
             curl \
@@ -31,11 +30,12 @@ jobs:
             python3-pip \
             cmake \
             git
-          pip install mako
 
-      - name: Install glslang (if glslang binary missing)
-        run: |
-          # Check if glslang exists
+          # ✅ Install latest Meson via PIP (>= 1.4.0)
+          pip install --upgrade pip
+          pip install meson mako
+
+          # 🔁 glslang fallback
           if ! command -v glslang >/dev/null; then
             echo "glslang not found, linking glslangValidator as fallback..."
             if command -v glslangValidator >/dev/null; then
@@ -45,9 +45,6 @@ jobs:
               exit 1
             fi
           fi
-          # Verify install
-          glslang --version || echo "glslang not responding"
-          glslangValidator --version || true
 
       - name: Execute build script
         run: bash ./turnip_builder.sh
