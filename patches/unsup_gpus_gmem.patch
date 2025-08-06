@@ -2,7 +2,7 @@ diff --git a/src/freedreno/common/freedreno_devices.py b/src/freedreno/common/fr
 index 2a821dd822b..527d5fc9e4a 100644
 --- a/src/freedreno/common/freedreno_devices.py
 +++ b/src/freedreno/common/freedreno_devices.py
-@@ -1065,6 +1065,20 @@ add_gpus([
+@@ -1065,6 +1065,21 @@ add_gpus([
          raw_magic_regs = a730_raw_magic_regs,
      ))
 
