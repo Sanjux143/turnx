@@ -1,0 +1,51 @@
+diff --git a/src/freedreno/common/freedreno_dev_info.h b/src/freedreno/common/freedreno_dev_info.h
+index 6de3d4eff77..bb00323b6e5 100644
+--- a/src/freedreno/common/freedreno_dev_info.h
++++ b/src/freedreno/common/freedreno_dev_info.h
+@@ -276,6 +276,9 @@ struct fd_dev_info {
+       /* Whether a single clear blit could be used for both sysmem and gmem.*/
+       bool has_generic_clear;
+ 
++      /* Whether r8g8 UBWC fast-clear work correctly. */
++      bool r8g8_faulty_fast_clear_quirk;
++
+       /* a750 has a bug where writing and then reading a UBWC-compressed IBO
+        * requires flushing UCHE. This is reproducible in many CTS tests, for
+        * example dEQP-VK.image.load_store.with_format.2d.*.
+diff --git a/src/freedreno/common/freedreno_devices.py b/src/freedreno/common/freedreno_devices.py
+index 3e44524e755..205caba0e37 100644
+--- a/src/freedreno/common/freedreno_devices.py
++++ b/src/freedreno/common/freedreno_devices.py
+@@ -897,6 +897,7 @@ a7xx_750 = A7XXProps(
+         ubwc_unorm_snorm_int_compatible = True,
+         supports_ibo_ubwc = True,
+         has_generic_clear = True,
++        r8g8_faulty_fast_clear_quirk = True,
+         gs_vpc_adjacency_quirk = True,
+         storage_8bit = True,
+         ubwc_all_formats_compatible = True,
+diff --git a/src/freedreno/vulkan/tu_clear_blit.cc b/src/freedreno/vulkan/tu_clear_blit.cc
+index fca5f66aeeb..9411838002a 100644
+--- a/src/freedreno/vulkan/tu_clear_blit.cc
++++ b/src/freedreno/vulkan/tu_clear_blit.cc
+@@ -3274,12 +3274,18 @@ static bool
+ use_generic_clear_for_image_clear(struct tu_cmd_buffer *cmd,
+                                   struct tu_image *image)
+ {
+-   return cmd->device->physical_device->info->a7xx.has_generic_clear &&
++   const struct fd_dev_info *info = cmd->device->physical_device->info;
++   return info->a7xx.has_generic_clear &&
+           /* A7XX supports R9G9B9E5_FLOAT as color attachment and supports
+            * generic clears for it. A7XX TODO: allow R9G9B9E5_FLOAT
+            * attachments.
+            */
+-          image->vk.format != VK_FORMAT_E5B9G9R9_UFLOAT_PACK32;
++          image->vk.format != VK_FORMAT_E5B9G9R9_UFLOAT_PACK32 &&
++          /* Clearing VK_FORMAT_R8G8_* with fast-clear value, certain
++           * dimensions (e.g. 960x540), and having GMEM renderpass afterwards
++           * may lead to a GPU fault on A7XX.
++           */
++          !(info->a7xx.r8g8_faulty_fast_clear_quirk && image_is_r8g8(image));
+ }
+ 
+ template <chip CHIP>
