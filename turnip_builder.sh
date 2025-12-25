@@ -1,99 +1,104 @@
 #!/bin/bash -e
-
-#Define variables
 green='\033[0;32m'
 red='\033[0;31m'
 nocolor='\033[0m'
-deps="meson ninja patchelf unzip curl pip flex bison zip glslang glslangValidator"
+
+deps="meson ninja patchelf unzip curl pip flex bison zip git"
 workdir="$(pwd)/turnip_workdir"
-magiskdir="$workdir/turnip_module"
-ndkver="android-ndk-r28c"
-ndk="$workdir/$ndkver/toolchains/llvm/prebuilt/linux-x86_64/bin"
-sdkver="34"
-mesasrc="https://gitlab.freedesktop.org/mesa/mesa/-/archive/main/mesa-main.zip"
+ndkver="android-ndk-r29"
+sdkver="35"
+mesa_repo="https://gitlab.freedesktop.org/mesa/mesa.git"
 
-clear
-
-#There are 4 functions here, simply comment to disable.
-#You can insert your own function and make a pull request.
-run_all(){
-	check_deps
-	prepare_workdir
-	build_lib_for_android
-	port_lib_for_magisk
-	port_lib_for_adrenotools
-}
+commit_hash=""
+version_str=""
 
 check_deps(){
-	echo "Checking system for required Dependencies ..."
-		for deps_chk in $deps;
-			do
-				sleep 0.25
-				if command -v "$deps_chk" >/dev/null 2>&1 ; then
-					echo -e "$green - $deps_chk found $nocolor"
-				else
-					echo -e "$red - $deps_chk not found, can't countinue. $nocolor"
-					deps_missing=1
-				fi;
-			done
-
-		if [ "$deps_missing" == "1" ]
-			then echo "Please install missing dependencies" && exit 1
+	echo "Checking system dependencies ..."
+	for dep in $deps; do
+		if ! command -v $dep >/dev/null 2>&1; then
+			echo -e "$red Missing dependency: $dep$nocolor"
+			missing=1
+		else
+			echo -e "$green Found: $dep$nocolor"
 		fi
-
-	echo "Installing python Mako dependency (if missing) ..." $'\n'
-		pip install mako &> /dev/null
+	done
+	if [ "$missing" == "1" ]; then
+		echo "Please install missing dependencies." && exit 1
+	fi
+	pip install mako &> /dev/null || true
 }
 
-prepare_workdir(){
-	echo "Preparing work directory ..." $'\n'
-		mkdir -p "$workdir" && cd "$_"
-
-	echo "Downloading android-ndk from google server ..." $'\n'
-		curl https://dl.google.com/android/repository/"$ndkver"-linux.zip --output "$ndkver"-linux.zip &> /dev/null
-	echo "Exracting android-ndk ..." $'\n'
-		unzip "$ndkver"-linux.zip &> /dev/null
-
-	echo "Downloading mesa source ..." $'\n'
-		curl "$mesasrc" --output mesa-main.zip &> /dev/null
-	echo "Exracting mesa source ..." $'\n'
-		unzip mesa-main.zip &> /dev/null
-		cd mesa-main
-		
-	# ⛏ Apply patch for Adreno 710/720 GPUs
-	echo "Applying Adrenoxxx" $'\n'
-	patch -p1 < "$GITHUB_WORKSPACE/patches/unsup_gpus_gmem.patch" || {
-		echo -e "$red Failed to apply patch! $nocolor"
-		exit 1
-	}
+prepare_ndk(){
+	echo "Preparing NDK ..."
+	mkdir -p "$workdir"
+	cd "$workdir"
+	if [ -z "${ANDROID_NDK_LATEST_HOME}" ]; then
+		if [ ! -d "$ndkver" ]; then
+			echo "Downloading Android NDK ..."
+			curl -L "https://dl.google.com/android/repository/${ndkver}-linux.zip" --output "${ndkver}-linux.zip" &> /dev/null
+			echo "Extracting NDK ..."
+			unzip "${ndkver}-linux.zip" &> /dev/null
+		fi
+	else
+		echo "Using preinstalled Android NDK."
+	fi
 }
 
-build_lib_for_android(){
-	#Workaround for using Clang as c compiler instead of GCC
-	mkdir -p "$workdir/bin"
-	ln -sf "$ndk/clang" "$workdir/bin/cc"
-	ln -sf "$ndk/clang++" "$workdir/bin/c++"
-	export PATH="$workdir/bin:$ndk:$PATH"
-	export CC=clang
-	export CXX=clang++
-	export AR=llvm-ar
-	export RANLIB=llvm-ranlib
-	export STRIP=llvm-strip
-	export OBJDUMP=llvm-objdump
-	export OBJCOPY=llvm-objcopy
-	export LDFLAGS="-fuse-ld=lld"
+prepare_source(){
+	echo "Preparing Mesa source..."
+	cd "$workdir"
+	if [ -d mesa ]; then rm -rf mesa; fi
+	git clone --depth=1 "$mesa_repo" mesa
+	cd mesa
 
-	echo "Generating build files ..." $'\n'
-		cat <<EOF >"android-aarch64.txt"
+	if [ -f src/freedreno/vulkan/tu_query.cc ]; then
+		sed -i 's/tu_bo_init_new_cached/tu_bo_init_new/g' src/freedreno/vulkan/tu_query.cc
+	fi
+
+	if [ -f src/freedreno/vulkan/tu_device.cc ]; then
+		sed -i 's/physical_device->has_cached_coherent_memory = .*/physical_device->has_cached_coherent_memory = false;/' src/freedreno/vulkan/tu_device.cc || true
+	fi
+    
+	grep -rl "VK_MEMORY_PROPERTY_HOST_CACHED_BIT" src/freedreno/vulkan/ | while read file; do
+		sed -i 's/dev->physical_device->has_cached_coherent_memory ? VK_MEMORY_PROPERTY_HOST_CACHED_BIT : 0/0/g' "$file" || true
+		sed -i 's/VK_MEMORY_PROPERTY_HOST_CACHED_BIT/0/g' "$file" || true
+	done
+
+	commit_hash=$(git rev-parse HEAD)
+	if [ -f VERSION ]; then
+	    version_str=$(cat VERSION | xargs)
+	else
+	    version_str="unknown"
+	fi
+
+	cd "$workdir"
+}
+
+compile_mesa(){
+	echo -e "${green}Compiling Mesa...${nocolor}"
+
+	local source_dir="$workdir/mesa"
+	local build_dir="$source_dir/build"
+	
+	local ndk_root_path
+	if [ -z "${ANDROID_NDK_LATEST_HOME}" ]; then
+		ndk_root_path="$workdir/$ndkver"
+	else
+		ndk_root_path="$ANDROID_NDK_LATEST_HOME"
+	fi
+
+	local ndk_bin_path="$ndk_root_path/toolchains/llvm/prebuilt/linux-x86_64/bin"
+	local ndk_sysroot_path="$ndk_root_path/toolchains/llvm/prebuilt/linux-x86_64/sysroot"
+
+	local cross_file="$source_dir/android-aarch64-crossfile.txt"
+	cat <<EOF > "$cross_file"
 [binaries]
-ar = '$ndk/llvm-ar'
-c = ['ccache', '$ndk/aarch64-linux-android$sdkver-clang']
-cpp = ['ccache', '$ndk/aarch64-linux-android$sdkver-clang++', '-fno-exceptions', '-fno-unwind-tables', '-fno-asynchronous-unwind-tables', '--start-no-unused-arguments', '-static-libstdc++', '--end-no-unused-arguments']
-c_ld = '$ndk/ld.lld'
-cpp_ld = '$ndk/ld.lld'
-strip = '$ndk/aarch64-linux-android-strip'
-pkg-config = ['env', 'PKG_CONFIG_LIBDIR=$ndk/pkg-config', '/usr/bin/pkg-config']
-
+ar = '$ndk_bin_path/llvm-ar'
+c = ['ccache', '$ndk_bin_path/aarch64-linux-android$sdkver-clang', '--sysroot=$ndk_sysroot_path']
+cpp = ['ccache', '$ndk_bin_path/aarch64-linux-android$sdkver-clang++', '--sysroot=$ndk_sysroot_path', '-fno-exceptions', '-fno-unwind-tables', '-fno-asynchronous-unwind-tables', '--start-no-unused-arguments', '-static-libstdc++', '--end-no-unused-arguments']
+c_ld = 'lld'
+cpp_ld = 'lld'
+strip = '$ndk_bin_path/aarch64-linux-android-strip'
 [host_machine]
 system = 'android'
 cpu_family = 'aarch64'
@@ -101,128 +106,89 @@ cpu = 'armv8'
 endian = 'little'
 EOF
 
-		cat <<EOF >"native.txt"
-[build_machine]
-c = ['ccache', 'clang']
-cpp = ['ccache', 'clang++']
-ar = 'llvm-ar'
-strip = 'llvm-strip'
-c_ld = 'ld.lld'
-cpp_ld = 'ld.lld'
-system = 'linux'
-cpu_family = 'x86_64'
-cpu = 'x86_64'
-endian = 'little'
-EOF
+	cd "$source_dir"
 
-		meson setup build-android-aarch64 \
-			--cross-file "android-aarch64.txt" \
-			--native-file "native.txt" \
-			-Dbuildtype=release \
-			-Dplatforms=android \
-			-Dplatform-sdk-version="$sdkver" \
-			-Dandroid-stub=true \
-			-Dgallium-drivers= \
-			-Dvulkan-drivers=freedreno \
-			-Dvulkan-beta=true \
-			-Dfreedreno-kmds=kgsl \
-			-Db_lto=true \
-   			-Db_lto_mode=thin \
-			-Dstrip=true \
-			-Degl=disabled &> "$workdir/meson_log"
+	export LIBRT_LIBS=""
+	export CFLAGS="-D__ANDROID__"
+	export CXXFLAGS="-D__ANDROID__"
 
-	echo "Compiling build files ..." $'\n'
-		ninja -C build-android-aarch64 &> "$workdir/ninja_log"
+	meson setup "$build_dir" --cross-file "$cross_file" \
+		-Dbuildtype=release \
+		-Dplatforms=android \
+		-Dplatform-sdk-version=$sdkver \
+		-Dandroid-stub=true \
+		-Dgallium-drivers= \
+		-Dvulkan-drivers=freedreno \
+		-Dfreedreno-kmds=kgsl \
+		-Degl=disabled \
+		-Dglx=disabled \
+		-Dshared-glapi=enabled \
+		-Db_lto=true \
+		-Dvulkan-beta=true \
+		-Ddefault_library=shared \
+		2>&1 | tee "$workdir/meson_log"
 
-	if ! [ -a "$workdir"/mesa-main/build-android-aarch64/src/freedreno/vulkan/libvulkan_freedreno.so ]; then
-		echo -e "$red Build failed! $nocolor" && exit 1
+	ninja -C "$build_dir" 2>&1 | tee "$workdir/ninja_log"
+}
+
+package_driver(){
+	local source_dir="$workdir/mesa"
+	local build_dir="$source_dir/build"
+	local lib_path="$build_dir/src/freedreno/vulkan/libvulkan_freedreno.so"
+	local package_temp="$workdir/package_temp"
+	local output_suffix="a6xx_fix"
+
+	if [ ! -f "$lib_path" ]; then
+		echo -e "${red}Build failed: libvulkan_freedreno.so not found.${nocolor}"
+		exit 1
 	fi
-}
 
-port_lib_for_magisk(){
-	echo "Using patchelf to match soname ..." $'\n'
-		cp "$workdir"/mesa-main/build-android-aarch64/src/freedreno/vulkan/libvulkan_freedreno.so "$workdir"
-		cd "$workdir"
-		patchelf --set-soname vulkan.adreno.so libvulkan_freedreno.so
-		mv libvulkan_freedreno.so vulkan.adreno.so
+	rm -rf "$package_temp"
+	mkdir -p "$package_temp"
+	cp "$lib_path" "$package_temp/lib_temp.so"
 
-	echo "Prepare magisk module structure ..." $'\n'
-		p1="system/vendor/lib64/hw"
-		mkdir -p "$magiskdir" && cd "$_"
-		mkdir -p "$p1"
+	cd "$package_temp"
+	patchelf --set-soname "vulkan.adreno.so" lib_temp.so
+	mv lib_temp.so "vulkan.ad07XX.so"
 
-		meta="META-INF/com/google/android"
-		mkdir -p "$meta"
-
-		cat <<EOF >"$meta/update-binary"
-#################
-# Initialization
-#################
-umask 022
-ui_print() { echo "\$1"; }
-OUTFD=\$2
-ZIPFILE=\$3
-. /data/adb/magisk/util_functions.sh
-install_module
-exit 0
-EOF
-
-		cat <<EOF >"$meta/updater-script"
-#MAGISK
-EOF
-
-		cat <<EOF >"module.prop"
-id=turnip
-name=turnip
-version=$(cat $workdir/mesa-main/VERSION)
-versionCode=1
-author=MrMiy4mo
-description=Turnip is an open-source vulkan driver for devices with adreno GPUs.
-EOF
-
-		cat <<EOF >"customize.sh"
-set_perm_recursive \$MODPATH/system 0 0 755 u:object_r:system_file:s0
-set_perm_recursive \$MODPATH/system/vendor 0 2000 755 u:object_r:vendor_file:s0
-set_perm \$MODPATH/$p1/vulkan.adreno.so 0 0 0644 u:object_r:same_process_hal_file:s0
-EOF
-
-	echo "Copy necessary files from work directory ..." $'\n'
-		cp "$workdir"/vulkan.adreno.so "$magiskdir"/"$p1"
-
-	echo "Packing files in to magisk module ..." $'\n'
-		zip -r "$workdir"/turnip.zip ./* &> /dev/null
-		if ! [ -a "$workdir"/turnip.zip ];
-			then echo -e "$red-Packing failed!$nocolor" && exit 1
-			else echo -e "$green-All done, the module saved to;$nocolor" && echo "$workdir"/turnip.zip
-		fi
-}
-
-port_lib_for_adrenotools(){
-	libname=vulkan.freedreno.so
-	echo "Using patchelf to match soname" $'\n'
-		cp "$workdir"/mesa-main/build-android-aarch64/src/freedreno/vulkan/libvulkan_freedreno.so "$workdir"/$libname
-		cd "$workdir"
-		patchelf --set-soname $libname $libname
-	echo "Preparing meta.json" $'\n'
-		cat <<EOF > "meta.json"
+	local date_meta=$(date +'%b %d, %Y')
+	local short_hash=${commit_hash:0:7}
+	local meta_name="Turnip-Main-${short_hash}-A6xxFix"
+	cat <<EOF > meta.json
 {
-	"schemaVersion": 1,
-	"name": "Turnip v25.3.0",
-	"description": "$(date)",
-	"author": "Sanju",
-	"packageVersion": "1",
-	"vendor": "Mesa",
-	"driverVersion": "$(cat $workdir/mesa-main/VERSION)",
-	"minApi": $sdkver,
-	"libraryName": "$libname"
+  "schemaVersion": 1,
+  "name": "$meta_name",
+  "description": "Mesa Main + A6xx Stability Fix. Commit $commit_hash",
+  "author": "mesa-ci",
+  "driverVersion": "$version_str",
+  "libraryName": "vulkan.ad07XX.so"
 }
 EOF
 
-	zip -9 "$workdir"/turnip_adrenotools.zip $libname meta.json &> /dev/null
-	if ! [ -a "$workdir"/turnip_adrenotools.zip ];
-		then echo -e "$red-Packing turnip_adrenotools.zip failed!$nocolor" && exit 1
-		else echo -e "$green-All done, the module saved to;$nocolor" && echo "$workdir"/turnip_adrenotools.zip
-	fi
+	local zip_name="turnip_main_$(date +'%Y%m%d')_${short_hash}_${output_suffix}.zip"
+	zip -9 "$workdir/$zip_name" "vulkan.ad07XX.so" meta.json
+	echo -e "${green}Package ready: $workdir/$zip_name${nocolor}"
 }
 
-run_all
+generate_release_info() {
+    echo -e "${green}Generating release info...${nocolor}"
+    cd "$workdir"
+    local date_tag=$(date +'%Y%m%d')
+	local short_hash=${commit_hash:0:7}
+
+    echo "Mesa-Main-A6xxFix-${date_tag}-${short_hash}" > tag
+    echo "Turnip CI Build - ${date_tag} (A6xx Fix)" > release
+
+    echo "Automated Turnip CI build." > description
+    echo "" >> description
+    echo "**Base:** Mesa main" >> description
+    echo "**Fix:** Stability improvements for A6xx devices." >> description
+    echo "**Commit:** [${short_hash}](${mesa_repo%.git}/-/commit/${commit_hash})" >> description
+}
+
+check_deps
+prepare_ndk
+prepare_source
+compile_mesa
+package_driver
+generate_release_info
